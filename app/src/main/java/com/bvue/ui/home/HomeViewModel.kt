@@ -25,11 +25,17 @@ class HomeViewModel(private val repo: YoutubeRepository) : ViewModel() {
     private var loadedCategory: String? = null
     private var refreshTick = 0
 
-    // YouTube's trending kiosk is static, so a "refresh" rotates through Tamil-biased seed queries
-    // (the user prefers Tamil content) and shuffles, surfacing genuinely different videos each pull.
-    private val allSeeds = listOf(
-        "trending tamil", "tamil songs 2026", "tamil news today",
-        "tamil cinema", "trending india", "latest tamil",
+    // The user loves beautiful Tamil songs / love songs and dislikes cricket — so the "All" feed
+    // rotates through these searches instead of YouTube trending (which surfaced cricket/news).
+    private val songSeeds = listOf(
+        "tamil love songs",
+        "tamil melody songs",
+        "tamil romantic songs",
+        "best tamil love songs",
+        "tamil 90s love songs",
+        "ilaiyaraaja melody songs",
+        "ar rahman tamil love songs",
+        "tamil hit songs",
     )
 
     fun load(category: String, force: Boolean = false) {
@@ -41,16 +47,14 @@ class HomeViewModel(private val repo: YoutubeRepository) : ViewModel() {
         viewModelScope.launch {
             if (isRefresh) _refreshing.value = true
             try {
-                val videos = fetch(category, force)
+                val videos = repo.search(queryFor(category)).let { if (force) it.shuffled() else it }
                 if (videos.isNotEmpty()) {
                     _uiState.value = HomeUiState.Success(videos)
                 } else if (_uiState.value !is HomeUiState.Success) {
                     _uiState.value = HomeUiState.Error("Nothing to show right now")
                 }
             } catch (t: Throwable) {
-                val fallback = runCatching {
-                    repo.search(if (category == "All") "trending tamil" else category)
-                }.getOrNull()
+                val fallback = runCatching { repo.search("tamil love songs") }.getOrNull()
                 if (!fallback.isNullOrEmpty()) {
                     _uiState.value = HomeUiState.Success(fallback)
                 } else if (_uiState.value !is HomeUiState.Success) {
@@ -62,25 +66,15 @@ class HomeViewModel(private val repo: YoutubeRepository) : ViewModel() {
         }
     }
 
-    private suspend fun fetch(category: String, force: Boolean): List<VideoItem> {
-        return if (category == "All") {
-            if (force) {
-                repo.search(allSeeds[refreshTick % allSeeds.size]).shuffled()
-            } else {
-                repo.getTrending().ifEmpty { repo.search("trending tamil") }
-            }
-        } else {
-            val query = if (force) {
-                when (refreshTick % 4) {
-                    0 -> category
-                    1 -> "latest $category"
-                    2 -> "trending $category"
-                    else -> "tamil $category"
-                }
-            } else {
-                category
-            }
-            repo.search(query).let { if (force) it.shuffled() else it }
-        }
+    private fun queryFor(category: String): String = when (category) {
+        "All" -> songSeeds[refreshTick % songSeeds.size]
+        "Love" -> "tamil love songs"
+        "Melody" -> "tamil melody songs"
+        "Romantic" -> "tamil romantic songs"
+        "Hits" -> "tamil hit songs"
+        "90s" -> "tamil 90s hit songs"
+        "Ilaiyaraaja" -> "ilaiyaraaja tamil hit songs"
+        "A.R. Rahman" -> "ar rahman tamil songs"
+        else -> "tamil $category songs"
     }
 }

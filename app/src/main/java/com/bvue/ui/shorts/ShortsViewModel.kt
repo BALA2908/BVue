@@ -24,7 +24,11 @@ class ShortsViewModel(private val repo: YoutubeRepository) : ViewModel() {
 
     private var tick = 0
     private val queries = listOf(
-        "tamil shorts", "tamil comedy shorts", "tamil status", "trending shorts india",
+        "tamil love song status",
+        "tamil melody song shorts",
+        "tamil romantic song status",
+        "tamil love songs shorts",
+        "tamil song whatsapp status",
     )
 
     init { load() }

@@ -37,7 +37,7 @@ fun HomeScreen(onVideoClick: (String) -> Unit) {
     val vm: HomeViewModel = viewModel(
         factory = viewModelFactory { initializer { HomeViewModel(app.container.youtubeRepository) } },
     )
-    val chips = remember { listOf("All", "Music", "Gaming", "News", "Live", "Sports", "Learning", "Podcasts") }
+    val chips = remember { listOf("All", "Love", "Melody", "Romantic", "Hits", "90s", "Ilaiyaraaja", "A.R. Rahman") }
     var selected by rememberSaveable { mutableStateOf("All") }
     LaunchedEffect(selected) { vm.load(selected) }
     val state by vm.uiState.collectAsStateWithLifecycle()

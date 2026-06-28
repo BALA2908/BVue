@@ -3,6 +3,7 @@ package com.bvue.di
 import android.content.Context
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
+import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.room.Room
 import com.bvue.data.extractor.NewPipeDownloader
@@ -71,6 +72,13 @@ class AppContainer(context: Context) {
             )
             .setWakeMode(C.WAKE_MODE_NETWORK)
             .setHandleAudioBecomingNoisy(true)
+            // Start playback after ~1s buffered (faster start) while keeping a deep buffer to ride out
+            // CDN throttling without stalling.
+            .setLoadControl(
+                DefaultLoadControl.Builder()
+                    .setBufferDurationsMs(30_000, 60_000, 1_000, 2_000)
+                    .build(),
+            )
             .build()
     }
 

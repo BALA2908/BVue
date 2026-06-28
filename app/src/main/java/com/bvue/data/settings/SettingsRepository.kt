@@ -33,7 +33,7 @@ class SettingsRepository(private val context: Context) {
     val settings: Flow<AppSettings> = context.dataStore.data.map { p ->
         AppSettings(
             defaultQuality = p[Keys.QUALITY]?.let { runCatching { QualityPref.valueOf(it) }.getOrNull() }
-                ?: QualityPref.HIGHEST,
+                ?: QualityPref.P1080,
             preferredAudioLanguage = p[Keys.AUDIO_LANG] ?: "ta",
             themeMode = p[Keys.THEME]?.let { runCatching { ThemeMode.valueOf(it) }.getOrNull() }
                 ?: ThemeMode.SYSTEM,

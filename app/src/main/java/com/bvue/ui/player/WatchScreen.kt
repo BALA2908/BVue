@@ -107,6 +107,29 @@ import com.bvue.util.watchUrl
 import com.bvue.util.youtubeThumb
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import android.app.Activity
+import android.content.Context
+import android.content.ContextWrapper
+import android.content.pm.ActivityInfo
+import androidx.activity.compose.BackHandler
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material.icons.filled.Fullscreen
+import androidx.compose.material.icons.filled.FullscreenExit
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableLongStateOf
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Brush
+import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
+import com.bvue.ui.theme.BVueGradientColors
+import android.os.Build
+import androidx.compose.foundation.gestures.detectTransformGestures
+import androidx.media3.ui.AspectRatioFrameLayout
 
 @Composable
 fun WatchScreen(
@@ -236,20 +259,98 @@ fun WatchScreen(
     val subFlow = remember(uploaderUrl) { lib.isSubscribed(uploaderUrl ?: "") }
     val isSubscribed by subFlow.collectAsStateWithLifecycle(initialValue = false)
 
+    var fullscreen by remember { mutableStateOf(false) }
+    var fillZoom by remember { mutableStateOf(false) }
+    val activity = remember(context) { context.findActivity() }
+    // Captured before we ever touch it, so fullscreen exit restores the exact original window bg.
+    val originalWindowBg = remember(activity) { activity?.window?.decorView?.background }
+    LaunchedEffect(fullscreen) {
+        if (!fullscreen) fillZoom = false
+        val a = activity ?: return@LaunchedEffect
+        val controller = WindowCompat.getInsetsController(a.window, a.window.decorView)
+        // Draw into the camera cutout while fullscreen so there's no white/letterbox bar beside it.
+        // ALWAYS (API 30+) fills cutouts on EVERY edge; SHORT_EDGES alone still left a white strip
+        // beside the S24's centre punch-hole in landscape. Fall back to SHORT_EDGES on API 28–29.
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            val attrs = a.window.attributes
+            attrs.layoutInDisplayCutoutMode = when {
+                !fullscreen ->
+                    android.view.WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_DEFAULT
+                Build.VERSION.SDK_INT >= Build.VERSION_CODES.R ->
+                    android.view.WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS
+                else ->
+                    android.view.WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
+            }
+            a.window.attributes = attrs
+        }
+        // Belt-and-suspenders: paint the whole window black while fullscreen so the cutout area (and
+        // any transient letterbox during rotation) is never the white app background.
+        a.window.setBackgroundDrawable(
+            if (fullscreen) android.graphics.drawable.ColorDrawable(android.graphics.Color.BLACK)
+            else originalWindowBg,
+        )
+        if (fullscreen) {
+            a.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+            controller.systemBarsBehavior =
+                androidx.core.view.WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+            controller.hide(WindowInsetsCompat.Type.systemBars())
+        } else {
+            a.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+            controller.show(WindowInsetsCompat.Type.systemBars())
+        }
+    }
+    DisposableEffect(Unit) {
+        onDispose {
+            val a = activity ?: return@onDispose
+            a.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                val attrs = a.window.attributes
+                attrs.layoutInDisplayCutoutMode =
+                    android.view.WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_DEFAULT
+                a.window.attributes = attrs
+            }
+            a.window.setBackgroundDrawable(originalWindowBg)
+            WindowCompat.getInsetsController(a.window, a.window.decorView)
+                .show(WindowInsetsCompat.Type.systemBars())
+        }
+    }
+    BackHandler(enabled = fullscreen) { fullscreen = false }
+
     Column(
         Modifier
             .fillMaxSize()
-            .background(MaterialTheme.colorScheme.background),
+            .background(if (fullscreen) Color.Black else MaterialTheme.colorScheme.background),
     ) {
         Box(
             Modifier
                 .fillMaxWidth()
-                .then(if (isInPip) Modifier.weight(1f) else Modifier.aspectRatio(16f / 9f))
-                .background(Color.Black),
+                .then(if (isInPip || fullscreen) Modifier.weight(1f) else Modifier.aspectRatio(16f / 9f))
+                .background(Color.Black)
+                .pointerInput(fullscreen) {
+                    // Pinch to zoom-to-fill (crop) / zoom-out to fit — fullscreen only, like YouTube.
+                    if (fullscreen) {
+                        detectTransformGestures { _, _, zoom, _ ->
+                            if (zoom > 1.01f) fillZoom = true else if (zoom < 0.99f) fillZoom = false
+                        }
+                    }
+                },
         ) {
             if (data != null) {
                 AndroidView(
-                    factory = { ctx -> PlayerView(ctx).apply { useController = false; player = exoPlayer } },
+                    factory = { ctx ->
+                        PlayerView(ctx).apply {
+                            useController = false
+                            player = exoPlayer
+                            setBackgroundColor(android.graphics.Color.BLACK)
+                        }
+                    },
+                    update = {
+                        it.resizeMode = if (fillZoom) {
+                            AspectRatioFrameLayout.RESIZE_MODE_ZOOM
+                        } else {
+                            AspectRatioFrameLayout.RESIZE_MODE_FIT
+                        }
+                    },
                     modifier = Modifier.fillMaxSize(),
                 )
                 if (!isInPip) {
@@ -257,6 +358,8 @@ fun WatchScreen(
                         player = exoPlayer,
                         canPip = pip?.isSupported == true,
                         onEnterPip = { pip?.enter() },
+                        isFullscreen = fullscreen,
+                        onToggleFullscreen = { fullscreen = !fullscreen },
                         modifier = Modifier.fillMaxSize(),
                     )
                 }
@@ -264,13 +367,16 @@ fun WatchScreen(
                 CircularProgressIndicator(color = Color.White, modifier = Modifier.align(Alignment.Center))
             }
             if (!isInPip) {
-                IconButton(onClick = onBack, modifier = Modifier.align(Alignment.TopStart)) {
+                IconButton(
+                    onClick = { if (fullscreen) fullscreen = false else onBack() },
+                    modifier = Modifier.align(Alignment.TopStart),
+                ) {
                     Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = Color.White)
                 }
             }
         }
 
-        if (!isInPip) {
+        if (!isInPip && !fullscreen) {
             when (val s = state) {
                 is PlayerUiState.Restricted ->
                     MessageState(
@@ -415,12 +521,17 @@ private fun PlayerControls(
     player: Player,
     canPip: Boolean,
     onEnterPip: () -> Unit,
+    isFullscreen: Boolean,
+    onToggleFullscreen: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     var visible by remember { mutableStateOf(true) }
     var playing by remember { mutableStateOf(player.isPlaying) }
-    var position by remember { mutableStateOf(0L) }
-    var duration by remember { mutableStateOf(0L) }
+    var position by remember { mutableLongStateOf(0L) }
+    var duration by remember { mutableLongStateOf(0L) }
+    var buffered by remember { mutableLongStateOf(0L) }
+    var scrubbing by remember { mutableStateOf(false) }
+    var scrubFraction by remember { mutableFloatStateOf(0f) }
     var seekFlash by remember { mutableStateOf<SeekFlash?>(null) }
     var seekCounter by remember { mutableIntStateOf(0) }
     val flashAlpha = remember { Animatable(0f) }
@@ -433,20 +544,23 @@ private fun PlayerControls(
         playing = player.isPlaying
         onDispose { player.removeListener(listener) }
     }
+    // Smooth progress: poll often, but never fight the user's finger while scrubbing.
     LaunchedEffect(Unit) {
         while (true) {
-            position = player.currentPosition
-            duration = player.duration.coerceAtLeast(0L)
-            delay(500)
+            if (!scrubbing) {
+                position = player.currentPosition
+                duration = player.duration.coerceAtLeast(0L)
+                buffered = player.bufferedPosition.coerceAtLeast(0L)
+            }
+            delay(200)
         }
     }
-    LaunchedEffect(visible, playing) {
-        if (visible && playing) {
-            delay(3_000)
+    LaunchedEffect(visible, playing, scrubbing) {
+        if (visible && playing && !scrubbing) {
+            delay(3_500)
             visible = false
         }
     }
-    // Double-tap seek feedback: pulse in then fade out, independent of the controls' visibility.
     LaunchedEffect(seekFlash) {
         if (seekFlash != null) {
             flashAlpha.snapTo(1f)
@@ -455,77 +569,125 @@ private fun PlayerControls(
         }
     }
 
+    fun flashSeek(forward: Boolean) {
+        val target = if (forward) {
+            player.currentPosition + 10_000
+        } else {
+            (player.currentPosition - 10_000).coerceAtLeast(0L)
+        }
+        player.seekTo(target)
+        position = target
+        seekCounter += 1
+        seekFlash = SeekFlash(forward, seekCounter)
+        visible = true
+    }
+
     Box(
         modifier.pointerInput(Unit) {
             detectTapGestures(
                 onTap = { visible = !visible },
-                onDoubleTap = { offset ->
-                    val forward = offset.x >= size.width / 2f
-                    val target = if (forward) {
-                        player.currentPosition + 10_000
-                    } else {
-                        (player.currentPosition - 10_000).coerceAtLeast(0L)
-                    }
-                    player.seekTo(target)
-                    seekCounter += 1
-                    seekFlash = SeekFlash(forward, seekCounter)
-                    visible = true
-                },
+                onDoubleTap = { offset -> flashSeek(offset.x >= size.width / 2f) },
             )
         },
     ) {
         AnimatedVisibility(
             visible = visible,
-            enter = fadeIn(tween(180)),
-            exit = fadeOut(tween(180)),
+            enter = fadeIn(tween(150)),
+            exit = fadeOut(tween(200)),
             modifier = Modifier.fillMaxSize(),
         ) {
             Box(Modifier.fillMaxSize()) {
-                Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.28f)))
+                // Scrims so white controls stay legible over any frame.
+                Box(
+                    Modifier.align(Alignment.TopCenter).fillMaxWidth().height(96.dp)
+                        .background(Brush.verticalGradient(listOf(Color.Black.copy(alpha = 0.45f), Color.Transparent))),
+                )
+                Box(
+                    Modifier.align(Alignment.BottomCenter).fillMaxWidth().height(140.dp)
+                        .background(Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(alpha = 0.6f)))),
+                )
+
                 if (canPip) {
-                    IconButton(onClick = onEnterPip, modifier = Modifier.align(Alignment.TopEnd)) {
-                        Icon(
-                            Icons.Filled.PictureInPictureAlt,
-                            contentDescription = "Picture-in-picture",
-                            tint = Color.White,
-                        )
+                    IconButton(onClick = onEnterPip, modifier = Modifier.align(Alignment.TopEnd).padding(4.dp)) {
+                        Icon(Icons.Filled.PictureInPictureAlt, contentDescription = "Picture-in-picture", tint = Color.White)
                     }
                 }
-                IconButton(
-                    onClick = { if (player.isPlaying) player.pause() else player.play() },
-                    modifier = Modifier.align(Alignment.Center).size(64.dp),
-                ) {
-                    AnimatedContent(
-                        targetState = playing,
-                        transitionSpec = {
-                            (scaleIn(tween(160)) + fadeIn(tween(160))) togetherWith
-                                (scaleOut(tween(160)) + fadeOut(tween(160)))
-                        },
-                        label = "playPause",
-                    ) { isPlaying ->
-                        Icon(
-                            imageVector = if (isPlaying) Icons.Filled.Pause else Icons.Filled.PlayArrow,
-                            contentDescription = if (isPlaying) "Pause" else "Play",
-                            tint = Color.White,
-                            modifier = Modifier.size(48.dp),
-                        )
-                    }
-                }
+
+                // Transport: −10s · play/pause · +10s
                 Row(
-                    Modifier
-                        .align(Alignment.BottomCenter)
-                        .fillMaxWidth()
-                        .padding(horizontal = 8.dp, vertical = 4.dp),
+                    modifier = Modifier.align(Alignment.Center),
                     verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(28.dp),
                 ) {
-                    Text(formatDuration(position / 1000), color = Color.White, style = MaterialTheme.typography.labelMedium)
-                    Slider(
-                        value = if (duration > 0) (position.toFloat() / duration).coerceIn(0f, 1f) else 0f,
-                        onValueChange = { if (duration > 0) player.seekTo((it * duration).toLong()) },
-                        modifier = Modifier.weight(1f).padding(horizontal = 8.dp),
-                        colors = SliderDefaults.colors(thumbColor = BVueRed, activeTrackColor = BVueRed),
+                    IconButton(onClick = { flashSeek(false) }, modifier = Modifier.size(48.dp)) {
+                        Icon(Icons.Filled.Replay10, "Rewind 10 seconds", tint = Color.White, modifier = Modifier.size(34.dp))
+                    }
+                    Box(
+                        modifier = Modifier
+                            .size(66.dp)
+                            .clip(CircleShape)
+                            .background(Color.Black.copy(alpha = 0.32f))
+                            .pressScale { if (player.isPlaying) player.pause() else player.play() },
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        AnimatedContent(
+                            targetState = playing,
+                            transitionSpec = {
+                                (scaleIn(tween(160)) + fadeIn(tween(160))) togetherWith
+                                    (scaleOut(tween(160)) + fadeOut(tween(160)))
+                            },
+                            label = "playPause",
+                        ) { isPlaying ->
+                            Icon(
+                                imageVector = if (isPlaying) Icons.Filled.Pause else Icons.Filled.PlayArrow,
+                                contentDescription = if (isPlaying) "Pause" else "Play",
+                                tint = Color.White,
+                                modifier = Modifier.size(40.dp),
+                            )
+                        }
+                    }
+                    IconButton(onClick = { flashSeek(true) }, modifier = Modifier.size(48.dp)) {
+                        Icon(Icons.Filled.Forward10, "Forward 10 seconds", tint = Color.White, modifier = Modifier.size(34.dp))
+                    }
+                }
+
+                // Bottom: scrubber + time + fullscreen
+                Column(
+                    Modifier.align(Alignment.BottomCenter).fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp),
+                ) {
+                    PlayerScrubber(
+                        position = position,
+                        buffered = buffered,
+                        duration = duration,
+                        scrubbing = scrubbing,
+                        scrubFraction = scrubFraction,
+                        onScrubStart = { scrubbing = true; visible = true },
+                        onScrub = { f -> scrubFraction = f },
+                        onScrubEnd = { f ->
+                            if (duration > 0) {
+                                val target = (f * duration).toLong()
+                                player.seekTo(target)
+                                position = target
+                            }
+                            scrubbing = false
+                        },
                     )
-                    Text(formatDuration(duration / 1000), color = Color.White, style = MaterialTheme.typography.labelMedium)
+                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                        val shown = if (scrubbing && duration > 0) (scrubFraction * duration).toLong() else position
+                        Text(
+                            "${formatDuration(shown / 1000)} / ${formatDuration(duration / 1000)}",
+                            color = Color.White,
+                            style = MaterialTheme.typography.labelMedium,
+                        )
+                        Spacer(Modifier.weight(1f))
+                        IconButton(onClick = onToggleFullscreen) {
+                            Icon(
+                                imageVector = if (isFullscreen) Icons.Filled.FullscreenExit else Icons.Filled.Fullscreen,
+                                contentDescription = if (isFullscreen) "Exit fullscreen" else "Fullscreen",
+                                tint = Color.White,
+                            )
+                        }
+                    }
                 }
             }
         }
@@ -550,6 +712,99 @@ private fun PlayerControls(
             }
         }
     }
+}
+
+/**
+ * A sleek, responsive seek bar: drag follows the finger 1:1 (no snap-back), with a brand-gradient
+ * played track, a lighter buffered track, and a thumb that grows while scrubbing.
+ */
+@Composable
+private fun PlayerScrubber(
+    position: Long,
+    buffered: Long,
+    duration: Long,
+    scrubbing: Boolean,
+    scrubFraction: Float,
+    onScrubStart: () -> Unit,
+    onScrub: (Float) -> Unit,
+    onScrubEnd: (Float) -> Unit,
+) {
+    val playedFraction = when {
+        scrubbing -> scrubFraction
+        duration > 0 -> (position.toFloat() / duration).coerceIn(0f, 1f)
+        else -> 0f
+    }
+    val bufferedFraction = if (duration > 0) (buffered.toFloat() / duration).coerceIn(0f, 1f) else 0f
+    val trackHeight by animateDpAsState(if (scrubbing) 6.dp else 3.dp, label = "trackHeight")
+    val thumbRadius by animateDpAsState(if (scrubbing) 9.dp else 6.dp, label = "thumbRadius")
+
+    Box(
+        Modifier
+            .fillMaxWidth()
+            .height(28.dp)
+            .pointerInput(Unit) {
+                detectTapGestures { offset ->
+                    val f = (offset.x / size.width).coerceIn(0f, 1f)
+                    onScrubStart(); onScrub(f); onScrubEnd(f)
+                }
+            }
+            .pointerInput(Unit) {
+                var f = 0f
+                detectHorizontalDragGestures(
+                    onDragStart = { offset ->
+                        f = (offset.x / size.width).coerceIn(0f, 1f)
+                        onScrubStart(); onScrub(f)
+                    },
+                    onHorizontalDrag = { change, _ ->
+                        f = (change.position.x / size.width).coerceIn(0f, 1f)
+                        onScrub(f)
+                    },
+                    onDragEnd = { onScrubEnd(f) },
+                    onDragCancel = { onScrubEnd(f) },
+                )
+            },
+        contentAlignment = Alignment.Center,
+    ) {
+        Canvas(Modifier.fillMaxWidth().height(20.dp)) {
+            val w = size.width
+            val cy = size.height / 2f
+            val th = trackHeight.toPx()
+            val r = th / 2f
+            drawRoundRect(
+                color = Color.White.copy(alpha = 0.24f),
+                topLeft = Offset(0f, cy - r),
+                size = Size(w, th),
+                cornerRadius = CornerRadius(r, r),
+            )
+            if (bufferedFraction > 0f) {
+                drawRoundRect(
+                    color = Color.White.copy(alpha = 0.40f),
+                    topLeft = Offset(0f, cy - r),
+                    size = Size(w * bufferedFraction, th),
+                    cornerRadius = CornerRadius(r, r),
+                )
+            }
+            val playedW = (w * playedFraction).coerceIn(0f, w)
+            if (playedW > 0f) {
+                drawRoundRect(
+                    brush = Brush.horizontalGradient(BVueGradientColors, startX = 0f, endX = playedW.coerceAtLeast(1f)),
+                    topLeft = Offset(0f, cy - r),
+                    size = Size(playedW, th),
+                    cornerRadius = CornerRadius(r, r),
+                )
+            }
+            drawCircle(color = Color.White, radius = thumbRadius.toPx(), center = Offset(playedW, cy))
+        }
+    }
+}
+
+private fun Context.findActivity(): Activity? {
+    var ctx: Context? = this
+    while (ctx is ContextWrapper) {
+        if (ctx is Activity) return ctx
+        ctx = ctx.baseContext
+    }
+    return null
 }
 
 private fun StreamData.toVideoItem() = VideoItem(

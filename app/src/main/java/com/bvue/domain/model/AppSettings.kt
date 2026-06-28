@@ -29,7 +29,7 @@ enum class AudioLanguage(val code: String, val label: String) {
 }
 
 data class AppSettings(
-    val defaultQuality: QualityPref = QualityPref.HIGHEST,
+    val defaultQuality: QualityPref = QualityPref.P1080,
     val preferredAudioLanguage: String = AudioLanguage.TAMIL.code, // "ta"
     val themeMode: ThemeMode = ThemeMode.SYSTEM,
     val audioOnly: Boolean = false,
