@@ -1,0 +1,23 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- BVue brand gradient (Canva purple → Instagram pink → Apple-Music/Netflix red → orange). -->
+    <path android:pathData="M0,0h108v108h-108z">
+        <aapt:attr name="android:fillColor">
+            <gradient
+                android:type="linear"
+                android:startX="6"
+                android:startY="6"
+                android:endX="102"
+                android:endY="102">
+                <item android:offset="0" android:color="#FF7D2AE8" />
+                <item android:offset="0.4" android:color="#FFE1306C" />
+                <item android:offset="0.7" android:color="#FFFA2D48" />
+                <item android:offset="1" android:color="#FFF77737" />
+            </gradient>
+        </aapt:attr>
+    </path>
+</vector>

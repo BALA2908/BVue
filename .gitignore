@@ -1,0 +1,22 @@
+# Gradle / build output
+.gradle/
+build/
+
+# Kotlin
+.kotlin/
+
+# Local machine config (each dev supplies their own SDK path)
+local.properties
+
+# Android Studio / IntelliJ
+.idea/
+*.iml
+captures/
+.externalNativeBuild/
+.cxx/
+
+# OS / misc
+.DS_Store
+Thumbs.db
+*.tmp
+inst_user_settings.tmp

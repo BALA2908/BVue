@@ -1,0 +1,12 @@
+<resources>
+    <!-- Launcher / brand -->
+    <color name="ic_launcher_background">#FFFF0000</color>
+    <color name="bvue_red">#FFFF0000</color>
+    <color name="bvue_brand">#FF7D2AE8</color>
+    <color name="bvue_intro_bg">#FF120324</color>
+
+    <!-- Window backgrounds (pre-Compose draw) -->
+    <color name="bvue_bg_light">#FFFFFFFF</color>
+    <color name="bvue_bg_dark">#FF0F0F0F</color>
+    <color name="bvue_splash_bg">#FFFFFFFF</color>
+</resources>

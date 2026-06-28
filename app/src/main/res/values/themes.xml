@@ -1,0 +1,17 @@
+<resources>
+    <!-- Base app theme: no ActionBar; Compose draws everything. -->
+    <style name="Theme.BVue" parent="android:Theme.Material.Light.NoActionBar">
+        <item name="android:windowBackground">@color/bvue_bg_light</item>
+        <item name="android:statusBarColor">@color/bvue_bg_light</item>
+        <item name="android:navigationBarColor">@color/bvue_bg_light</item>
+        <item name="android:windowLightStatusBar">true</item>
+    </style>
+
+    <!-- Splash theme: deep-brand background that the Compose play-button-draw intro continues from. -->
+    <style name="Theme.BVue.Starting" parent="Theme.SplashScreen">
+        <item name="windowSplashScreenBackground">@color/bvue_intro_bg</item>
+        <item name="windowSplashScreenAnimatedIcon">@drawable/ic_bvue_splash</item>
+        <item name="windowSplashScreenIconBackgroundColor">@color/bvue_intro_bg</item>
+        <item name="postSplashScreenTheme">@style/Theme.BVue</item>
+    </style>
+</resources>

@@ -1,0 +1,19 @@
+<resources>
+    <string name="app_name">BVue</string>
+
+    <!-- Top bar / nav -->
+    <string name="cd_logo">BVue</string>
+    <string name="cd_cast">Cast</string>
+    <string name="cd_notifications">Notifications</string>
+    <string name="cd_search">Search</string>
+    <string name="cd_account">Account</string>
+
+    <string name="nav_home">Home</string>
+    <string name="nav_shorts">Shorts</string>
+    <string name="nav_create">Create</string>
+    <string name="nav_subscriptions">Subscriptions</string>
+    <string name="nav_you">You</string>
+    <string name="nav_settings">Settings</string>
+
+    <string name="home_empty">Search to start watching</string>
+</resources>
